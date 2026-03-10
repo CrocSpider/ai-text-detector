@@ -32,6 +32,8 @@ See `configs/train.example.yaml`.
 
 For heterogeneous sources with per-dataset field mappings, see `configs/train.multisource.example.yaml`.
 
+For a higher-throughput A100-oriented profile, see `configs/train.multisource.a100.example.yaml`.
+
 Each source entry can be either a plain path/URI string or a mapping with dataset-specific overrides:
 
 ```yaml
@@ -64,6 +66,18 @@ Supported source mapping fields:
 - `metadata_defaults`
 - `include`
 - `exclude`
+
+## A100 profile
+
+`configs/train.multisource.a100.example.yaml` is tuned for a single A100-class GPU and assumes you want to reduce gradient accumulation and push more real batch through the accelerator.
+
+- `train_batch_size: 32`
+- `eval_batch_size: 64`
+- `gradient_accumulation_steps: 1`
+- `bf16: true`
+- `fp16: false`
+
+If you only have a 40 GB A100 and hit OOM, back off to `train_batch_size: 24` and `eval_batch_size: 48` first.
 
 ## Run locally on a strong machine
 

@@ -1,7 +1,7 @@
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
-  name: ai-text-detector-train-a100
+  name: ai-text-detector-train
   namespace: katee-we-asia
   labels:
     team: we-asia
@@ -11,7 +11,7 @@ metadata:
     katee.springernature.io/vault: we-asia
 spec:
   components:
-    - name: ai-text-detector-train-a100
+    - name: ai-text-detector-train
       type: snjob
       properties:
         image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4
@@ -45,7 +45,7 @@ spec:
         - type: snstorage
           properties:
             configMap:
-              - name: ai-text-detector-training-config-a100
+              - name: ai-text-detector-training-config
                 mountPath: /config
                 data:
                   train.yaml: |

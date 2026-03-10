@@ -41,6 +41,8 @@ kubectl apply -f infra/k8s/training/katee-application.gpu.a100.from-existing-dat
 
 That manifest uses the A100-oriented config profile and currently assumes Katee can schedule `computeClass: nvidia-tesla-a100-1`. If your cluster exposes a different A100 compute class, update that field before applying.
 
+It is designed to update the existing `ai-text-detector-train` application in place. Running a second parallel Katee application against the same training config map and PVC-backed artifact/cache resources will fail ownership checks.
+
 ## Where the files come from
 
 The training job expects three JSONL files in the data volume:

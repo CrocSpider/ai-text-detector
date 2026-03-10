@@ -30,4 +30,6 @@ For an A100-class GPU run, use:
 kubectl apply -f infra/k8s/training/katee-application.gpu.a100.from-existing-data.example.yaml
 ```
 
+That manifest updates the existing `ai-text-detector-train` application in place. Katee does not allow a second application to take ownership of the same config map and PVC-backed resources.
+
 Update image names, PVC names, and config values before applying them.

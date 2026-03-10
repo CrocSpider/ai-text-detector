@@ -33,6 +33,14 @@ kubectl apply -f infra/k8s/training/katee-application.gpu.from-existing-data.exa
 
 The Katee manifests use the native `Application` + `snjob` + `snstorage` path so PVCs and config mounts are preserved correctly.
 
+## Katee A100 apply
+
+```bash
+kubectl apply -f infra/k8s/training/katee-application.gpu.a100.from-existing-data.example.yaml
+```
+
+That manifest uses the A100-oriented config profile and currently assumes Katee can schedule `computeClass: nvidia-tesla-a100-1`. If your cluster exposes a different A100 compute class, update that field before applying.
+
 ## Where the files come from
 
 The training job expects three JSONL files in the data volume:

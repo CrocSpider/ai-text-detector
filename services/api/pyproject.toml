@@ -9,6 +9,7 @@ description = "FastAPI service for cautious AI text origin risk analysis"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "text-features",
   "beautifulsoup4>=4.12,<5.0",
   "fastapi>=0.115,<0.116",
   "langdetect>=1.0.9,<2.0",

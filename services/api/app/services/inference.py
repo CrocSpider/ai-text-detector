@@ -9,7 +9,14 @@ from app.services.extraction import ExtractedDocument
 from app.services.features import SegmentFeatureSet, extract_segment_features
 from app.services.language import detect_language
 from app.services.model_bundle import ArtifactBundle, get_artifact_bundle
-from app.services.normalization import clamp, chunk_paragraphs, mean, safe_std, tokenize_words
+from app.services.normalization import chunk_paragraphs, tokenize_words
+from text_features.features import (
+    META_FEATURE_NAMES,
+    compute_document_consistency,
+    model_agreement,
+    quality_penalty_for,
+)
+from text_features.text import clamp, mean, safe_std
 from app.services.recommendation import (
     agreement_summary,
     confidence_label,
@@ -23,22 +30,6 @@ from app.services.recommendation import (
 
 HEURISTIC_MODEL_VERSION = "heuristic-ensemble-v0"
 HEURISTIC_CALIBRATION_VERSION = "temperature-lite-v0"
-META_FEATURE_NAMES = [
-    "classifier_mean",
-    "classifier_std",
-    "stylometry_mean",
-    "stylometry_std",
-    "surprisal_mean",
-    "surprisal_std",
-    "consistency",
-    "quality_penalty",
-    "uncertainty_penalty",
-    "token_count",
-    "segment_count",
-    "language_supported",
-    "mean_segment_tokens",
-    "max_segment_tokens",
-]
 
 
 def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
@@ -214,25 +205,6 @@ def score_segment(feature_set: SegmentFeatureSet, consistency: float) -> float:
     )
 
 
-def compute_document_consistency(features: list[SegmentFeatureSet]) -> float:
-    if len(features) <= 1:
-        return 0.35
-
-    avg_sentence_lengths = [feature.avg_sentence_length for feature in features]
-    ttrs = [feature.type_token_ratio for feature in features]
-    entropy_values = [feature.entropy for feature in features]
-
-    sentence_uniformity = 1.0 - clamp(safe_std(avg_sentence_lengths) / 10.0)
-    ttr_uniformity = 1.0 - clamp(safe_std(ttrs) / 0.15)
-    entropy_uniformity = 1.0 - clamp(safe_std(entropy_values) / 1.2)
-    return clamp(0.40 * sentence_uniformity + 0.30 * ttr_uniformity + 0.30 * entropy_uniformity)
-
-
-def model_agreement(classifier: float, stylometric: float, surprisal: float, consistency: float) -> float:
-    disagreement = safe_std([classifier, stylometric, surprisal, consistency])
-    return clamp(1.0 - disagreement / 0.35)
-
-
 def document_confidence_score(
     *,
     token_count: int,
@@ -271,15 +243,6 @@ def segment_confidence_score(feature_set: SegmentFeatureSet, extraction_quality:
         ),
     )
     return clamp(0.45 * internal_agreement + 0.30 * length_support + 0.15 * quality_support + 0.10 * language_support)
-
-
-def quality_penalty_for(extraction_quality: str, language_supported: bool, text: str) -> float:
-    penalty = {"good": 0.05, "fair": 0.16, "poor": 0.34}[extraction_quality]
-    if not language_supported:
-        penalty += 0.12
-    if len(text) < 300:
-        penalty += 0.10
-    return clamp(penalty)
 
 
 def calibrate_score(raw_score: float) -> float:

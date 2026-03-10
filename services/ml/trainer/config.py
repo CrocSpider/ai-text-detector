@@ -29,6 +29,7 @@ class DatasetConfig:
     attack_type_key: str = "attack_type"
     source_dataset_key: str = "source_dataset"
     extraction_quality_key: str = "extraction_quality"
+    segment_labels_key: str | None = None
     min_text_chars: int = 80
     target_chunk_chars: int = 900
     max_chunk_chars: int = 1500
@@ -75,6 +76,8 @@ class StylometryConfig:
 class MetaConfig:
     enabled: bool = True
     target_max_false_positive_rate: float = 0.05
+    oof_folds: int = 5
+    classifier_oof: bool = False
 
 
 @dataclass(slots=True)

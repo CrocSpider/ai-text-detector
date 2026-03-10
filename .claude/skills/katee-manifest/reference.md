@@ -54,7 +54,7 @@ This default was chosen after observing cluster scheduling behavior and avoiding
 
 ## Current image baseline
 
-- `eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.3`
+- `eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4`
 
 That tag includes the `transformers` compatibility fix for the `TrainingArguments` API change.
 

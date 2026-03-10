@@ -68,16 +68,17 @@ Supported source mapping fields:
 ## Run locally on a strong machine
 
 ```bash
+python -m venv .venv-ml
+.venv-ml/bin/python -m pip install -e libs/text_features
 cd services/ml
-python -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/python -m trainer.cli train --config configs/train.example.yaml
+../../.venv-ml/bin/python -m pip install -e '.[dev]'
+../../.venv-ml/bin/python -m trainer.cli train --config configs/train.example.yaml
 ```
 
 ## Build the training image
 
 ```bash
-docker build -t REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.3 .
+docker build -f services/ml/Dockerfile -t REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4 .
 ```
 
 ## Prepare public seed data

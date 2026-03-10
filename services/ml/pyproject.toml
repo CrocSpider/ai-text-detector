@@ -33,3 +33,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["trainer*"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "../../libs/text_features"]
+testpaths = ["tests"]

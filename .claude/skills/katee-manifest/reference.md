@@ -54,7 +54,7 @@ This default was chosen after observing cluster scheduling behavior and avoiding
 
 ## Current image baseline
 
-- `REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.3`
+- `REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4`
 
 That tag includes the `transformers` compatibility fix for the `TrainingArguments` API change.
 

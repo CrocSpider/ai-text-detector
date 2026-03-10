@@ -61,7 +61,7 @@ properties:
 
 ## Current expected image
 
-- `REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.3`
+- `REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4`
 
 This tag includes the `transformers` compatibility fix for the `TrainingArguments` API mismatch.
 

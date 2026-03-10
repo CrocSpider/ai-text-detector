@@ -36,8 +36,11 @@ The repository now includes a separate training service in `services/ml` so you 
 To generate starter JSONL splits from the public HC3 dataset:
 
 ```bash
+python3 -m venv .venv-ml
+.venv-ml/bin/python -m pip install -e libs/text_features
 cd services/ml
-python -m trainer.cli prepare-hc3 --output-dir /tmp/ai-text-data --subset all --max-per-class 12000
+../../.venv-ml/bin/python -m pip install -e '.[dev]'
+../../.venv-ml/bin/python -m trainer.cli prepare-hc3 --output-dir /tmp/ai-text-data --subset all --max-per-class 12000
 ```
 
 For mixed sources, use `services/ml/configs/train.multisource.example.yaml`.
@@ -56,6 +59,7 @@ API_ARTIFACT_DEVICE=auto
 
 ```bash
 python3 -m venv .venv
+.venv/bin/python -m pip install -e libs/text_features
 cd services/api
 ../../.venv/bin/python -m pip install -e '.[dev]'
 ../../.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -74,6 +78,9 @@ npm run dev
 ```bash
 cd services/api
 ../../.venv/bin/pytest
+
+cd ../ml
+../../.venv-ml/bin/pytest
 ```
 
 ## API endpoints

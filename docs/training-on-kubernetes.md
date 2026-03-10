@@ -8,7 +8,7 @@ If you are deploying through Katee/KubeVela, use `infra/k8s/training/katee-appli
 
 1. Prepare `train.jsonl`, `validation.jsonl`, and `test.jsonl` on a mounted volume.
 2. Update `infra/k8s/training/all-in-one.gpu.example.yaml` with the right paths, PVC names, and model settings.
-3. Build and push the training image from `services/ml/Dockerfile`.
+3. Build and push the training image from repo root with `docker build -f services/ml/Dockerfile ... .`.
 4. Apply the single manifest file.
 5. After training completes, point the API at the produced artifact directory.
 
@@ -21,7 +21,7 @@ kubectl apply -f infra/k8s/training/all-in-one.gpu.example.yaml
 The example job in that file already points to:
 
 ```text
-REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.3
+REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4
 ```
 
 ## Katee apply

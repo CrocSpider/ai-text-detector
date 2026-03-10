@@ -9,6 +9,7 @@ FastAPI backend for the AI Text Origin Risk Analyzer.
 Optional artifact-backed inference is available by installing `.[ml]` and setting:
 
 ```bash
+../../.venv/bin/python -m pip install -e ../../libs/text_features
 ../../.venv/bin/python -m pip install -e '.[ml]'
 ```
 

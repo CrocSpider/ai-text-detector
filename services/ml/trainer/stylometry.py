@@ -99,20 +99,23 @@ def generate_oof_probabilities(
     """Generate out-of-fold predictions for training segments using K-fold CV.
 
     This avoids data leakage when the resulting probabilities are used as
-    input features for a downstream meta-model.
+    input features for a downstream meta-model.  Folds are grouped by
+    ``document_id`` so that sibling segments from the same document never
+    appear in both the train and held-out sets of a single fold.
     """
     np = import_module("numpy")
-    StratifiedKFold = getattr(import_module("sklearn.model_selection"), "StratifiedKFold")
+    StratifiedGroupKFold = getattr(import_module("sklearn.model_selection"), "StratifiedGroupKFold")
     LGBMClassifier = getattr(import_module("lightgbm"), "LGBMClassifier")
 
     labels = [segment.label for segment in train_segments]
+    groups = [segment.document_id for segment in train_segments]
     all_matrix = _build_matrix(train_segments, feature_rows)
     labels_array = np.asarray(labels, dtype=np.int32)
 
     oof_probabilities: dict[str, float] = {}
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
 
-    for fold_index, (train_idx, val_idx) in enumerate(skf.split(all_matrix, labels_array)):
+    for fold_index, (train_idx, val_idx) in enumerate(sgkf.split(all_matrix, labels_array, groups)):
         logger.info("Stylometry OOF fold %d/%d: train=%d, held-out=%d",
                      fold_index + 1, n_folds, len(train_idx), len(val_idx))
         fold_model = LGBMClassifier(

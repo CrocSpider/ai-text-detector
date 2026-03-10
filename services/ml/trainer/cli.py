@@ -137,8 +137,9 @@ def run_training(config: TrainingConfig) -> None:
         if oof_folds >= 2:
             logger.warning(
                 "Classifier OOF is disabled (meta.classifier_oof=false). "
-                "Meta-model will use in-sample classifier predictions for training. "
-                "Enable meta.classifier_oof for fully leak-free meta training."
+                "Meta-model will use in-sample classifier predictions for training — "
+                "this leaks signal. Set meta.classifier_oof=true (the default) for "
+                "fully leak-free meta training."
             )
 
     train_document_rows = build_document_feature_rows(
@@ -196,9 +197,13 @@ def run_training(config: TrainingConfig) -> None:
     )
     thresholds = probability_band_thresholds(elevated_threshold)
 
+    # Compute validation metrics on the threshold-half only so they are not
+    # contaminated by calibrator-seen samples.  Falls back to full validation
+    # when no clean split exists (e.g. meta-model disabled).
+    validation_metric_rows = threshold_rows if threshold_ids else validation_document_rows
     validation_document_metrics = binary_classification_metrics(
-        labels=[int(row["label"]) for row in validation_document_rows],
-        probabilities=[validation_document_probabilities[row["document_id"]] for row in validation_document_rows],
+        labels=[int(row["label"]) for row in validation_metric_rows],
+        probabilities=[validation_document_probabilities[row["document_id"]] for row in validation_metric_rows],
         threshold=elevated_threshold,
     )
     test_document_metrics = binary_classification_metrics(

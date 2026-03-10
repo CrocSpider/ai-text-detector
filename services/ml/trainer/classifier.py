@@ -174,11 +174,13 @@ def generate_oof_probabilities(
     """Generate out-of-fold predictions for training segments using K-fold CV.
 
     This is expensive (K full transformer training runs) but eliminates data
-    leakage when these predictions feed a downstream meta-model.
+    leakage when these predictions feed a downstream meta-model.  Folds are
+    grouped by ``document_id`` so that sibling segments from the same document
+    never appear in both the train and held-out sets of a single fold.
     """
     datasets_module = import_module("datasets")
     transformers_module = import_module("transformers")
-    StratifiedKFold = getattr(import_module("sklearn.model_selection"), "StratifiedKFold")
+    StratifiedGroupKFold = getattr(import_module("sklearn.model_selection"), "StratifiedGroupKFold")
     Dataset = getattr(datasets_module, "Dataset")
     AutoModelForSequenceClassification = getattr(transformers_module, "AutoModelForSequenceClassification")
     AutoTokenizer = getattr(transformers_module, "AutoTokenizer")
@@ -188,12 +190,13 @@ def generate_oof_probabilities(
     set_seed = getattr(transformers_module, "set_seed")
 
     labels = [segment.label for segment in train_segments]
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=run_config.seed)
+    groups = [segment.document_id for segment in train_segments]
+    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=run_config.seed)
     oof_probabilities: dict[str, float] = {}
 
     training_argument_params = inspect.signature(TrainingArguments.__init__).parameters
 
-    for fold_index, (train_idx, val_idx) in enumerate(skf.split(train_segments, labels)):
+    for fold_index, (train_idx, val_idx) in enumerate(sgkf.split(train_segments, labels, groups)):
         logger.info("Classifier OOF fold %d/%d: train=%d, held-out=%d",
                      fold_index + 1, n_folds, len(train_idx), len(val_idx))
 

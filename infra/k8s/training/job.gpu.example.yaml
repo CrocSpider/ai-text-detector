@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-text-detector-train
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: trainer
+          image: REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.3
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - trainer.cli
+            - train
+            - --config
+            - /config/train.yaml
+          env:
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: TRANSFORMERS_CACHE
+              value: /cache/huggingface
+            - name: TOKENIZERS_PARALLELISM
+              value: "false"
+          resources:
+            requests:
+              cpu: "4"
+              memory: 24Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 48Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: training-config
+              mountPath: /config
+            - name: training-data
+              mountPath: /mnt/data
+            - name: training-artifacts
+              mountPath: /mnt/artifacts
+            - name: training-cache
+              mountPath: /cache
+      volumes:
+        - name: training-config
+          configMap:
+            name: ai-text-detector-training-config
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: ai-text-detector-data
+        - name: training-artifacts
+          persistentVolumeClaim:
+            claimName: ai-text-detector-artifacts
+        - name: training-cache
+          persistentVolumeClaim:
+            claimName: ai-text-detector-cache

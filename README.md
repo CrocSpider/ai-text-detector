@@ -6,6 +6,7 @@ A production-minded scaffold for a cautious AI-text risk analyzer. The app estim
 
 - `apps/web`: Next.js frontend with paste, upload, batch analysis, result cards, and an admin evaluation page.
 - `services/api`: FastAPI backend with safe text extraction, heuristic ensemble scoring, confidence estimation, and explainable result formatting.
+- `services/ml`: GPU-oriented training pipeline for transformer, stylometry, and meta-model artifacts.
 - `docs`: product, privacy, and model notes for the initial release.
 
 Additional delivery docs include `docs/system-architecture.md`, `docs/dataset-strategy.md`, `docs/evaluation-plan.md`, `docs/ui-design.md`, `docs/implementation-roadmap.md`, `docs/sample-outputs.md`, and `docs/guardrails.md`.
@@ -22,6 +23,32 @@ This first implementation is a working scaffold with:
 - an admin-facing evaluation summary placeholder
 
 The current scoring stack is intentionally conservative and heuristic-backed until the trained ensemble is added.
+
+## Real ML training
+
+The repository now includes a separate training service in `services/ml` so you can build a container image and run training on stronger hardware or Kubernetes.
+
+- Training code: `services/ml/trainer/cli.py`
+- Example config: `services/ml/configs/train.example.yaml`
+- Container image: `services/ml/Dockerfile`
+- Kubernetes examples: `infra/k8s/training/`
+
+To generate starter JSONL splits from the public HC3 dataset:
+
+```bash
+cd services/ml
+python -m trainer.cli prepare-hc3 --output-dir /tmp/ai-text-data --subset all --max-per-class 12000
+```
+
+For mixed sources, use `services/ml/configs/train.multisource.example.yaml`.
+
+Artifact-backed API inference can be enabled later with:
+
+```bash
+API_ENABLE_ARTIFACT_MODELS=true
+API_ML_ARTIFACT_DIR=/path/to/artifact-run
+API_ARTIFACT_DEVICE=auto
+```
 
 ## Local development
 
@@ -66,6 +93,6 @@ cd services/api
 
 ## Next implementation targets
 
-1. Replace heuristic classifier placeholder with a fine-tuned encoder.
+1. Train the first real transformer + stylometry + meta artifact bundle on a larger machine.
 2. Add persistent storage and async job orchestration.
 3. Add benchmark runners, fairness slices, and model version registry.

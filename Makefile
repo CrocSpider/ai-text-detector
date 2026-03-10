@@ -1,6 +1,6 @@
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: install-web install-api dev-web dev-api test-api build-web
+.PHONY: install-web install-api install-ml dev-web dev-api test-api build-web build-trainer
 
 install-web:
 	cd apps/web && npm install
@@ -20,3 +20,10 @@ test-api:
 
 build-web:
 	cd apps/web && npm run build
+
+install-ml:
+	python3 -m venv .venv-ml
+	cd services/ml && ../../.venv-ml/bin/python -m pip install -e .
+
+build-trainer:
+	docker build -t ai-text-detector-trainer:latest services/ml

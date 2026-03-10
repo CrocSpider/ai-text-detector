@@ -1,0 +1,56 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: <app-name>
+  namespace: <namespace>
+  labels:
+    team: <team>
+    environment: <environment>
+  annotations:
+    katee.springernature.io/email: <owner-email>
+    katee.springernature.io/vault: <vault-name>
+spec:
+  components:
+    - name: <component-name>
+      type: snjob
+      properties:
+        image: <image>
+        imagePullPolicy: IfNotPresent
+        restartPolicy: Never
+        backoffLimit: 0
+        cleanupFinishedJobTTLSeconds: 604800
+        cleanupPreviousJobs: true
+        terminationGracePeriodSeconds: 30
+        holdApplicationUntilProxyStarts: false
+        command:
+          - <binary>
+          - <arg1>
+        resources:
+          cpu: "4"
+          memory: 24Gi
+        env:
+          - name: <ENV_NAME>
+            value: <env-value>
+        computeClassEnabled: true
+        computeClass: nvidia-l4-1
+      traits:
+        - type: snstorage
+          properties:
+            configMap:
+              - name: <configmap-name>
+                mountPath: /config
+                data:
+                  <file-name>: |
+                    <config-content>
+            pvc:
+              - name: <existing-or-new-pvc-name>
+                mountPath: /mnt/data
+                accessModes:
+                  - ReadWriteOnce
+                storageClassName: csi-regional-standard
+                resources:
+                  requests:
+                    storage: 100Gi
+            emptyDir:
+              - name: cache
+                mountPath: /cache

@@ -1,37 +1,39 @@
+"""Text normalisation — thin re-export of the shared text_features library.
+
+All core logic lives in ``libs/text_features`` so that training and API
+stay in sync.  This module re-exports the public API and provides the
+API-specific ``TextChunk`` variant (which carries an extra ``label`` field
+for UI display).
+"""
+
 from __future__ import annotations
 
-import math
-import re
 from dataclasses import dataclass
 
-
-WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
-SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+# Re-export shared utilities so existing ``from app.services.normalization import …``
+# statements continue to work without changes.
+from text_features.text import (  # noqa: F401
+    SENTENCE_SPLIT_RE,
+    WORD_RE,
+    clamp,
+    mean,
+    normalize_text,
+    safe_std,
+    split_paragraphs,
+    split_sentences,
+    tokenize_words,
+)
 
 
 @dataclass(slots=True)
 class TextChunk:
+    """API-specific chunk with a display label and paragraph index."""
+
     label: str
     text: str
     paragraph_index: int
     start_paragraph: int
     end_paragraph: int
-
-
-def normalize_text(text: str) -> str:
-    cleaned = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    cleaned = re.sub(r"[ \t]+", " ", cleaned)
-    return cleaned.strip()
-
-
-def split_paragraphs(text: str) -> list[str]:
-    normalized = normalize_text(text)
-    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", normalized) if part.strip()]
-    if paragraphs:
-        return paragraphs
-    single_line_parts = [line.strip() for line in normalized.split("\n") if line.strip()]
-    return single_line_parts or ([normalized] if normalized else [])
 
 
 def chunk_paragraphs(
@@ -83,33 +85,3 @@ def chunk_paragraphs(
         )
 
     return chunks
-
-
-def tokenize_words(text: str) -> list[str]:
-    return [match.group(0).lower() for match in WORD_RE.finditer(text)]
-
-
-def split_sentences(text: str) -> list[str]:
-    stripped = text.strip()
-    if not stripped:
-        return []
-    pieces = [segment.strip() for segment in SENTENCE_SPLIT_RE.split(stripped) if segment.strip()]
-    return pieces or [stripped]
-
-
-def clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
-    return max(minimum, min(maximum, value))
-
-
-def safe_std(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    mean = sum(values) / len(values)
-    variance = sum((value - mean) ** 2 for value in values) / len(values)
-    return math.sqrt(max(variance, 0.0))
-
-
-def mean(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    return sum(values) / len(values)

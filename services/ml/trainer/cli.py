@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from trainer.artifacts import write_config_snapshot, write_evaluation_report, write_manifest
-from trainer.classifier import train_transformer_classifier
+from trainer.classifier import train_transformer_classifier, generate_oof_probabilities as classifier_oof_probabilities
 from trainer.config import TrainingConfig, dump_config, load_training_config
 from trainer.datasets import PreparedSplit, prepare_datasets
 from trainer.evaluate import (
@@ -18,7 +18,7 @@ from trainer.evaluate import (
 from trainer.features import TextFeatureRow, extract_text_features
 from trainer.meta import build_document_feature_rows, heuristic_document_probability, train_meta_model
 from trainer.public_datasets import SplitRatio, prepare_hc3_dataset
-from trainer.stylometry import train_stylometry_model
+from trainer.stylometry import train_stylometry_model, generate_oof_probabilities as stylometry_oof_probabilities
 from trainer.text_utils import clamp
 
 
@@ -107,11 +107,45 @@ def run_training(config: TrainingConfig) -> None:
         stylometry_validation = _heuristic_stylometry_probabilities(splits["validation"], feature_rows["validation"])
         stylometry_test = _heuristic_stylometry_probabilities(splits["test"], feature_rows["test"])
 
+    # --- Out-of-fold predictions for meta-model training ---
+    # Use OOF predictions for training set to avoid data leakage in the meta-model.
+    # Validation/test predictions from the full models are already out-of-sample.
+    oof_folds = config.meta.oof_folds if config.meta.enabled else 0
+    if oof_folds >= 2 and config.stylometry.enabled:
+        logger.info("Generating %d-fold OOF stylometry predictions for meta-model training", oof_folds)
+        stylometry_train_for_meta = stylometry_oof_probabilities(
+            train_segments=splits["train"].segments,
+            feature_rows=feature_rows["train"],
+            stylometry_config=config.stylometry,
+            n_folds=oof_folds,
+            seed=config.run.seed,
+        )
+    else:
+        stylometry_train_for_meta = stylometry_train
+
+    if oof_folds >= 2 and config.meta.classifier_oof:
+        logger.info("Generating %d-fold OOF classifier predictions for meta-model training (this is expensive)", oof_folds)
+        classifier_train_for_meta = classifier_oof_probabilities(
+            train_segments=splits["train"].segments,
+            model_config=config.model,
+            run_config=config.run,
+            n_folds=oof_folds,
+            output_dir=output_dir / "classifier",
+        )
+    else:
+        classifier_train_for_meta = classifier_outputs.train_probabilities
+        if oof_folds >= 2:
+            logger.warning(
+                "Classifier OOF is disabled (meta.classifier_oof=false). "
+                "Meta-model will use in-sample classifier predictions for training. "
+                "Enable meta.classifier_oof for fully leak-free meta training."
+            )
+
     train_document_rows = build_document_feature_rows(
         split=splits["train"],
         feature_rows=feature_rows["train"],
-        classifier_probabilities=classifier_outputs.train_probabilities,
-        stylometry_probabilities=stylometry_train,
+        classifier_probabilities=classifier_train_for_meta,
+        stylometry_probabilities=stylometry_train_for_meta,
     )
     validation_document_rows = build_document_feature_rows(
         split=splits["validation"],
@@ -135,6 +169,9 @@ def run_training(config: TrainingConfig) -> None:
         )
         validation_document_probabilities = meta_outputs.validation_probabilities
         test_document_probabilities = meta_outputs.test_probabilities
+        # Use only the threshold-half of validation (not seen by the calibrator)
+        # for threshold selection to avoid over-optimistic operating points.
+        threshold_ids = set(meta_outputs.threshold_document_ids or [])
     else:
         meta_outputs = None
         validation_document_probabilities = {
@@ -143,10 +180,18 @@ def run_training(config: TrainingConfig) -> None:
         test_document_probabilities = {
             row["document_id"]: heuristic_document_probability(row) for row in test_document_rows
         }
+        threshold_ids = None
+
+    # When the meta-model provides a clean split, only use the threshold half
+    # for threshold selection; otherwise fall back to the full validation set.
+    if threshold_ids:
+        threshold_rows = [row for row in validation_document_rows if row["document_id"] in threshold_ids]
+    else:
+        threshold_rows = validation_document_rows
 
     elevated_threshold = choose_threshold_with_target_fpr(
-        labels=[int(row["label"]) for row in validation_document_rows],
-        probabilities=[validation_document_probabilities[row["document_id"]] for row in validation_document_rows],
+        labels=[int(row["label"]) for row in threshold_rows],
+        probabilities=[validation_document_probabilities[row["document_id"]] for row in threshold_rows],
         max_false_positive_rate=config.meta.target_max_false_positive_rate,
     )
     thresholds = probability_band_thresholds(elevated_threshold)
@@ -192,10 +237,7 @@ def run_training(config: TrainingConfig) -> None:
             threshold=elevated_threshold,
             min_examples=config.evaluation.min_slice_examples,
         ),
-        "notes": [
-            "The meta-model is trained on train documents using in-sample base-model predictions.",
-            "For production calibration, replace this with out-of-fold meta training or a dedicated blend split.",
-        ],
+        "notes": _meta_training_notes(config),
     }
 
     evaluation_report_path = write_evaluation_report(output_dir, evaluation_report)
@@ -251,6 +293,25 @@ def _segment_probabilities(
             0.65 * classifier_score + 0.25 * stylometry_score + 0.10 * feature_row.surprisal_signal
         )
     return probabilities
+
+
+def _meta_training_notes(config: TrainingConfig) -> list[str]:
+    notes: list[str] = []
+    oof_folds = config.meta.oof_folds if config.meta.enabled else 0
+    if oof_folds >= 2:
+        if config.meta.classifier_oof:
+            notes.append(f"Meta-model trained using {oof_folds}-fold OOF predictions from both base models (leak-free).")
+        else:
+            notes.append(
+                f"Meta-model trained using {oof_folds}-fold OOF stylometry predictions. "
+                "Classifier predictions are in-sample (set meta.classifier_oof=true for full OOF)."
+            )
+    else:
+        notes.append(
+            "The meta-model is trained on train documents using in-sample base-model predictions. "
+            "Set meta.oof_folds >= 2 for out-of-fold meta training."
+        )
+    return notes
 
 
 if __name__ == "__main__":

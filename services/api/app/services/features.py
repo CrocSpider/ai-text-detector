@@ -1,69 +1,26 @@
+"""API-side feature extraction — delegates to the shared text_features library.
+
+The ``SegmentFeatureSet`` dataclass is kept here because it includes
+API-specific fields (``reasons``) that aren't needed during training.
+All numerical computation is delegated to
+``text_features.features.compute_stylometric_features``.
+"""
+
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
-from app.services.normalization import clamp, mean, safe_std, split_sentences, tokenize_words
-
-
-COMMON_TRANSITIONS = {
-    "however",
-    "therefore",
-    "moreover",
-    "furthermore",
-    "overall",
-    "in addition",
-    "for example",
-    "in conclusion",
-    "as a result",
-}
-
-STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "has",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "to",
-    "was",
-    "were",
-    "with",
-}
-
-STYLOMETRY_FEATURE_NAMES = [
-    "token_count",
-    "sentence_count",
-    "avg_sentence_length",
-    "sentence_length_std",
-    "type_token_ratio",
-    "repeated_bigram_ratio",
-    "repeated_sentence_ratio",
-    "punctuation_density",
-    "punctuation_regularization",
-    "transition_density",
-    "entropy",
-    "stopword_ratio",
-    "uniform_sentence_signal",
-    "low_diversity_signal",
-    "repetition_signal",
-    "punctuation_signal",
-    "transition_signal",
-    "entropy_signal",
-]
+from text_features.features import (  # noqa: F401
+    COMMON_TRANSITIONS,
+    STOPWORDS,
+    STYLOMETRY_FEATURE_NAMES,
+    compute_stylometric_features,
+    shannon_entropy,
+    sigmoid,
+    stopword_ratio,
+    stylometric_feature_map as _shared_stylometric_feature_map,
+    stylometric_feature_vector as _shared_stylometric_feature_vector,
+)
 
 
 @dataclass(slots=True)
@@ -93,121 +50,55 @@ class SegmentFeatureSet:
 
 
 def extract_segment_features(text: str) -> SegmentFeatureSet:
-    tokens = tokenize_words(text)
-    sentences = split_sentences(text)
-    token_count = len(tokens)
-    sentence_lengths = [len(tokenize_words(sentence)) for sentence in sentences if sentence.strip()]
-    sentence_lengths = [length for length in sentence_lengths if length > 0]
+    """Compute all segment-level features from raw text.
 
-    avg_sentence_length = mean([float(length) for length in sentence_lengths])
-    sentence_length_std = safe_std([float(length) for length in sentence_lengths])
-    ttr = len(set(tokens)) / max(token_count, 1)
-    token_stopword_ratio = stopword_ratio(tokens)
-
-    bigrams = list(zip(tokens, tokens[1:]))
-    repeated_bigram_ratio = 0.0
-    if bigrams:
-        repeated_bigram_ratio = (len(bigrams) - len(set(bigrams))) / len(bigrams)
-
-    normalized_sentences = [" ".join(tokenize_words(sentence)) for sentence in sentences if sentence.strip()]
-    repeated_sentence_ratio = 0.0
-    if normalized_sentences:
-        repeated_sentence_ratio = (
-            len(normalized_sentences) - len(set(normalized_sentences))
-        ) / len(normalized_sentences)
-
-    punctuation_chars = [char for char in text if char in ".,;:!?-"]
-    punctuation_density = len(punctuation_chars) / max(len(text), 1)
-    punctuation_counts = [sum(1 for char in sentence if char in ".,;:!?-") for sentence in sentences if sentence]
-    punctuation_std = safe_std([float(count) for count in punctuation_counts])
-    punctuation_regularization = 1.0 - clamp(punctuation_std / 5.0)
-
-    lowered = text.lower()
-    transition_hits = sum(lowered.count(marker) for marker in COMMON_TRANSITIONS)
-    transition_density = transition_hits / max(len(sentences), 1)
-
-    entropy = shannon_entropy(tokens)
-    entropy_signal = 1.0 - clamp((entropy - 3.5) / 2.2)
-    uniform_sentence_signal = 1.0 - clamp(sentence_length_std / max(avg_sentence_length, 1.0))
-    low_diversity_signal = clamp((0.48 - ttr) / 0.24)
-    repetition_signal = clamp((repeated_bigram_ratio * 1.5) + (repeated_sentence_ratio * 2.0))
-    punctuation_signal = clamp((punctuation_regularization - 0.40) / 0.50)
-    transition_signal = clamp((transition_density - 0.4) / 1.0)
-
-    stylometric = clamp(
-        0.35 * uniform_sentence_signal
-        + 0.25 * low_diversity_signal
-        + 0.20 * punctuation_signal
-        + 0.20 * transition_signal
-    )
-    surprisal = clamp(0.55 * entropy_signal + 0.45 * repetition_signal)
-    classifier_probability = sigmoid(
-        -1.1
-        + 1.7 * uniform_sentence_signal
-        + 1.3 * low_diversity_signal
-        + 1.2 * repetition_signal
-        + 0.8 * punctuation_signal
-        + 0.4 * transition_signal
-    )
+    Delegates numerical computation to the shared library and adds
+    API-specific interpretive reasons.
+    """
+    raw = compute_stylometric_features(text)
 
     reasons: list[str] = []
-    if uniform_sentence_signal > 0.62 and token_count > 120:
+    if raw["uniform_sentence_signal"] > 0.62 and raw["token_count"] > 120:
         reasons.append("Sentence lengths are unusually uniform across the segment.")
-    if low_diversity_signal > 0.58:
+    if raw["low_diversity_signal"] > 0.58:
         reasons.append("Lexical diversity is lower than expected for the segment length.")
-    if repetition_signal > 0.35:
+    if raw["repetition_signal"] > 0.35:
         reasons.append("Repeated phrasing patterns appear more often than usual.")
-    if entropy_signal > 0.55:
+    if raw["entropy_signal"] > 0.55:
         reasons.append("Token variation is compressed, which can resemble low-surprisal drafting.")
-    if transition_signal > 0.55:
+    if raw["transition_signal"] > 0.55:
         reasons.append("Transition markers appear at a highly regular cadence.")
     if not reasons:
         reasons.append("The segment shows mixed stylistic signals rather than one strong pattern.")
 
     return SegmentFeatureSet(
-        token_count=token_count,
-        sentence_count=len(sentences),
-        avg_sentence_length=avg_sentence_length,
-        sentence_length_std=sentence_length_std,
-        type_token_ratio=ttr,
-        repeated_bigram_ratio=repeated_bigram_ratio,
-        repeated_sentence_ratio=repeated_sentence_ratio,
-        punctuation_density=punctuation_density,
-        punctuation_regularization=punctuation_regularization,
-        transition_density=transition_density,
-        entropy=entropy,
-        stopword_ratio=token_stopword_ratio,
-        uniform_sentence_signal=uniform_sentence_signal,
-        low_diversity_signal=low_diversity_signal,
-        repetition_signal=repetition_signal,
-        punctuation_signal=punctuation_signal,
-        transition_signal=transition_signal,
-        entropy_signal=entropy_signal,
-        classifier_probability=classifier_probability,
-        stylometric_anomaly_score=stylometric,
-        surprisal_signal=surprisal,
+        token_count=raw["token_count"],
+        sentence_count=raw["sentence_count"],
+        avg_sentence_length=raw["avg_sentence_length"],
+        sentence_length_std=raw["sentence_length_std"],
+        type_token_ratio=raw["type_token_ratio"],
+        repeated_bigram_ratio=raw["repeated_bigram_ratio"],
+        repeated_sentence_ratio=raw["repeated_sentence_ratio"],
+        punctuation_density=raw["punctuation_density"],
+        punctuation_regularization=raw["punctuation_regularization"],
+        transition_density=raw["transition_density"],
+        entropy=raw["entropy"],
+        stopword_ratio=raw["stopword_ratio"],
+        uniform_sentence_signal=raw["uniform_sentence_signal"],
+        low_diversity_signal=raw["low_diversity_signal"],
+        repetition_signal=raw["repetition_signal"],
+        punctuation_signal=raw["punctuation_signal"],
+        transition_signal=raw["transition_signal"],
+        entropy_signal=raw["entropy_signal"],
+        classifier_probability=raw["heuristic_classifier_probability"],
+        stylometric_anomaly_score=raw["heuristic_stylometric_score"],
+        surprisal_signal=raw["surprisal_signal"],
         reasons=reasons,
     )
 
 
-def shannon_entropy(tokens: list[str]) -> float:
-    if not tokens:
-        return 0.0
-    counts: dict[str, int] = {}
-    for token in tokens:
-        counts[token] = counts.get(token, 0) + 1
-    total = len(tokens)
-    return -sum((count / total) * math.log2(count / total) for count in counts.values())
-
-
-def stopword_ratio(tokens: list[str]) -> float:
-    if not tokens:
-        return 0.0
-    return sum(1 for token in tokens if token in STOPWORDS) / len(tokens)
-
-
 def stylometric_feature_map(feature_set: SegmentFeatureSet) -> dict[str, float]:
-    return {
+    return _shared_stylometric_feature_map({
         "token_count": float(feature_set.token_count),
         "sentence_count": float(feature_set.sentence_count),
         "avg_sentence_length": feature_set.avg_sentence_length,
@@ -226,14 +117,8 @@ def stylometric_feature_map(feature_set: SegmentFeatureSet) -> dict[str, float]:
         "punctuation_signal": feature_set.punctuation_signal,
         "transition_signal": feature_set.transition_signal,
         "entropy_signal": feature_set.entropy_signal,
-    }
+    })
 
 
 def stylometric_feature_vector(feature_set: SegmentFeatureSet, feature_names: list[str] | None = None) -> list[float]:
-    feature_map = stylometric_feature_map(feature_set)
-    ordered_names = feature_names or STYLOMETRY_FEATURE_NAMES
-    return [feature_map.get(name, 0.0) for name in ordered_names]
-
-
-def sigmoid(value: float) -> float:
-    return 1.0 / (1.0 + math.exp(-value))
+    return _shared_stylometric_feature_vector(stylometric_feature_map(feature_set), feature_names)

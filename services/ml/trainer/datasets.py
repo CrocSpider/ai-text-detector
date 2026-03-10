@@ -23,6 +23,11 @@ class DocumentRecord:
     text: str
     label: int
     metadata: dict[str, str] = field(default_factory=dict)
+    segment_labels: list[int] | None = None
+    """Optional per-segment labels.  When provided (e.g. from mixed-origin
+    datasets), each segment gets its own label instead of inheriting the
+    document-level label.  Length must match the number of chunks produced
+    by ``chunk_text``."""
 
 
 @dataclass(slots=True)
@@ -54,6 +59,7 @@ class SourceSpec:
     attack_type_key: str | None
     source_dataset_key: str | None
     extraction_quality_key: str | None
+    segment_labels_key: str | None = None
     label_strategy: str = "default"
     label_map: dict[str, int] = field(default_factory=dict)
     metadata_defaults: dict[str, str] = field(default_factory=dict)
@@ -109,15 +115,39 @@ def _prepare_split(
         )
         if not chunks:
             continue
+
+        has_segment_labels = (
+            document.segment_labels is not None
+            and len(document.segment_labels) == len(chunks)
+        )
+        if document.segment_labels is not None and not has_segment_labels:
+            logger.warning(
+                "Document %s has %d segment labels but %d chunks — "
+                "falling back to document-level label",
+                document.document_id,
+                len(document.segment_labels),
+                len(chunks),
+            )
+
         for index, chunk in enumerate(chunks):
+            if has_segment_labels:
+                segment_label = document.segment_labels[index]  # type: ignore[index]
+                label_origin = "segment"
+            else:
+                segment_label = document.label
+                label_origin = "document"
+
+            seg_metadata = dict(document.metadata)
+            seg_metadata["label_origin"] = label_origin
+
             segments.append(
                 SegmentRecord(
                     segment_id=f"{document.document_id}::seg::{index}",
                     document_id=document.document_id,
                     text=chunk.text,
-                    label=document.label,
+                    label=segment_label,
                     segment_index=index,
-                    metadata=dict(document.metadata),
+                    metadata=seg_metadata,
                 )
             )
 
@@ -158,6 +188,7 @@ def normalize_source_specs(sources: list[Any], dataset_config: DatasetConfig) ->
                     attack_type_key=dataset_config.attack_type_key,
                     source_dataset_key=dataset_config.source_dataset_key,
                     extraction_quality_key=dataset_config.extraction_quality_key,
+                    segment_labels_key=dataset_config.segment_labels_key,
                 )
             )
             continue
@@ -182,6 +213,9 @@ def normalize_source_specs(sources: list[Any], dataset_config: DatasetConfig) ->
                 source_dataset_key=_optional_string(source.get("source_dataset_key", dataset_config.source_dataset_key)),
                 extraction_quality_key=_optional_string(
                     source.get("extraction_quality_key", dataset_config.extraction_quality_key)
+                ),
+                segment_labels_key=_optional_string(
+                    source.get("segment_labels_key", dataset_config.segment_labels_key)
                 ),
                 label_strategy=str(source.get("label_strategy", "default")),
                 label_map=_normalize_label_map(source.get("label_map", {})),
@@ -294,7 +328,14 @@ def _normalize_record(
             "text_length_bucket": text_length_bucket(text),
         }
     )
-    return DocumentRecord(document_id=document_id, text=text, label=label, metadata=metadata)
+
+    # Parse optional segment-level labels for mixed-origin documents.
+    segment_labels = _parse_segment_labels(record, source)
+
+    return DocumentRecord(
+        document_id=document_id, text=text, label=label, metadata=metadata,
+        segment_labels=segment_labels,
+    )
 
 
 def _document_id_for(record: dict[str, Any], source: SourceSpec, index: int) -> str:
@@ -303,6 +344,36 @@ def _document_id_for(record: dict[str, Any], source: SourceSpec, index: int) -> 
         if value not in {None, ""}:
             return str(value)
     return f"{_source_stem(source.uri)}-{index}"
+
+
+def _parse_segment_labels(record: dict[str, Any], source: SourceSpec) -> list[int] | None:
+    """Extract optional per-segment labels from a raw record.
+
+    Expected format: a JSON array of ints (one per paragraph/chunk), e.g.
+    ``"segment_labels": [0, 0, 1, 1, 0]``.
+
+    Returns ``None`` when the key is absent or the value is not a valid list.
+    """
+    if not source.segment_labels_key:
+        return None
+    raw = record.get(source.segment_labels_key)
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            import json as _json
+            raw = _json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(raw, list):
+        return None
+    coerced: list[int] = []
+    for item in raw:
+        label = _coerce_label(item, strategy=source.label_strategy, label_map=source.label_map)
+        if label is None:
+            return None  # all-or-nothing: any unresolvable label invalidates the list
+        coerced.append(label)
+    return coerced if coerced else None
 
 
 def _metadata_value(record: dict[str, Any], key: str | None, default: str) -> str:

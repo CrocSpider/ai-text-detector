@@ -77,7 +77,7 @@ class MetaConfig:
     enabled: bool = True
     target_max_false_positive_rate: float = 0.05
     oof_folds: int = 5
-    classifier_oof: bool = False
+    classifier_oof: bool = True
 
 
 @dataclass(slots=True)

@@ -3,7 +3,8 @@ version: "3.9"
 services:
   api:
     build:
-      context: ./services/api
+      context: .
+      dockerfile: services/api/Dockerfile
     environment:
       API_FRONTEND_ORIGIN: http://localhost:3000
     ports:

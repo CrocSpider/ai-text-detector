@@ -48,6 +48,15 @@ def build_document_feature_rows(
         if not segments:
             continue
 
+        # Derive the effective document label from actual segment labels.
+        # For mixed-origin documents with per-segment annotations, this
+        # gives a majority-vote label rather than the possibly-arbitrary
+        # document-level label.
+        effective_label = document.label
+        if any(seg.metadata.get("label_origin") == "segment" for seg in segments):
+            ones = sum(seg.label for seg in segments)
+            effective_label = 1 if ones * 2 >= len(segments) else 0
+
         document_feature_rows = [feature_rows[segment.segment_id] for segment in segments]
         classifier_values = [
             classifier_probabilities.get(segment.segment_id, feature_rows[segment.segment_id].heuristic_classifier_probability)
@@ -76,7 +85,7 @@ def build_document_feature_rows(
 
         row = {
             "document_id": document.document_id,
-            "label": document.label,
+            "label": effective_label,
             "classifier_mean": mean(classifier_values),
             "classifier_std": safe_std(classifier_values),
             "stylometry_mean": mean(stylometry_values),

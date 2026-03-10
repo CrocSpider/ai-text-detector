@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from trainer.config import DatasetConfig
-from trainer.text_utils import chunk_text, normalize_text, text_length_bucket
+from trainer.text_utils import TextChunk, chunk_text, normalize_text, text_length_bucket
 
 
 logger = logging.getLogger(__name__)
@@ -116,22 +116,11 @@ def _prepare_split(
         if not chunks:
             continue
 
-        has_segment_labels = (
-            document.segment_labels is not None
-            and len(document.segment_labels) == len(chunks)
-        )
-        if document.segment_labels is not None and not has_segment_labels:
-            logger.warning(
-                "Document %s has %d segment labels but %d chunks — "
-                "falling back to document-level label",
-                document.document_id,
-                len(document.segment_labels),
-                len(chunks),
-            )
+        resolved_chunk_labels = _resolve_chunk_labels(document, chunks)
 
         for index, chunk in enumerate(chunks):
-            if has_segment_labels:
-                segment_label = document.segment_labels[index]  # type: ignore[index]
+            if resolved_chunk_labels is not None:
+                segment_label = resolved_chunk_labels[index]
                 label_origin = "segment"
             else:
                 segment_label = document.label
@@ -374,6 +363,55 @@ def _parse_segment_labels(record: dict[str, Any], source: SourceSpec) -> list[in
             return None  # all-or-nothing: any unresolvable label invalidates the list
         coerced.append(label)
     return coerced if coerced else None
+
+
+def _resolve_chunk_labels(
+    document: DocumentRecord,
+    chunks: list[TextChunk],
+) -> list[int] | None:
+    """Map per-segment labels to per-chunk labels.
+
+    Handles three cases:
+    1. ``segment_labels`` is ``None`` → returns ``None`` (use document label).
+    2. ``len(segment_labels) == len(chunks)`` → labels already 1-to-1.
+    3. ``len(segment_labels) == n_paragraphs`` → aggregate paragraph labels
+       to the chunk level via majority vote (preferring label 1 on tie).
+
+    Falls back to ``None`` with a warning when neither match applies.
+    """
+    seg_labels = document.segment_labels
+    if seg_labels is None:
+        return None
+
+    if len(seg_labels) == len(chunks):
+        return seg_labels
+
+    # Paragraph count is derivable from the last chunk's end_paragraph index.
+    n_paragraphs = chunks[-1].end_paragraph + 1 if chunks else 0
+
+    if len(seg_labels) == n_paragraphs:
+        return [
+            _majority_label(seg_labels[chunk.start_paragraph : chunk.end_paragraph + 1])
+            for chunk in chunks
+        ]
+
+    logger.warning(
+        "Document %s has %d segment labels but %d chunks (%d paragraphs) — "
+        "falling back to document-level label",
+        document.document_id,
+        len(seg_labels),
+        len(chunks),
+        n_paragraphs,
+    )
+    return None
+
+
+def _majority_label(labels: list[int]) -> int:
+    """Return majority label, preferring 1 (AI-generated) on tie."""
+    if not labels:
+        return 0
+    ones = sum(labels)
+    return 1 if ones * 2 >= len(labels) else 0
 
 
 def _metadata_value(record: dict[str, Any], key: str | None, default: str) -> str:

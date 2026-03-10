@@ -1,0 +1,13 @@
+beautifulsoup4<5.0,>=4.12
+fastapi<0.116,>=0.115
+langdetect<2.0,>=1.0.9
+pydantic-settings<3.0,>=2.6
+pypdf<6.0,>=5.1
+python-docx<2.0,>=1.1
+python-multipart<0.1,>=0.0.17
+striprtf<0.1,>=0.0.26
+uvicorn[standard]<0.33,>=0.32
+
+[dev]
+httpx<0.29,>=0.28
+pytest<9.0,>=8.3

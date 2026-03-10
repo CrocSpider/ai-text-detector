@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: ai-text-origin-risk-api
+Version: 0.1.0
+Summary: FastAPI service for cautious AI text origin risk analysis
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: beautifulsoup4<5.0,>=4.12
+Requires-Dist: fastapi<0.116,>=0.115
+Requires-Dist: langdetect<2.0,>=1.0.9
+Requires-Dist: pydantic-settings<3.0,>=2.6
+Requires-Dist: pypdf<6.0,>=5.1
+Requires-Dist: python-docx<2.0,>=1.1
+Requires-Dist: python-multipart<0.1,>=0.0.17
+Requires-Dist: striprtf<0.1,>=0.0.26
+Requires-Dist: uvicorn[standard]<0.33,>=0.32
+Provides-Extra: dev
+Requires-Dist: httpx<0.29,>=0.28; extra == "dev"
+Requires-Dist: pytest<9.0,>=8.3; extra == "dev"
+
+# API Service
+
+FastAPI backend for the AI Text Origin Risk Analyzer.
+
+- extracts text from supported file types
+- runs a cautious heuristic ensemble
+- returns explainable document and segment results

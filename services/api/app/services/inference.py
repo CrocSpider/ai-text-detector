@@ -8,6 +8,7 @@ from app.schemas.analysis import AnalysisResult, ModelSignalSummary, SegmentResu
 from app.services.extraction import ExtractedDocument
 from app.services.features import SegmentFeatureSet, extract_segment_features
 from app.services.language import detect_language
+from app.services.model_bundle import ArtifactBundle, get_artifact_bundle
 from app.services.normalization import clamp, chunk_paragraphs, mean, safe_std, tokenize_words
 from app.services.recommendation import (
     agreement_summary,
@@ -20,8 +21,24 @@ from app.services.recommendation import (
 )
 
 
-MODEL_VERSION = "heuristic-ensemble-v0"
-CALIBRATION_VERSION = "temperature-lite-v0"
+HEURISTIC_MODEL_VERSION = "heuristic-ensemble-v0"
+HEURISTIC_CALIBRATION_VERSION = "temperature-lite-v0"
+META_FEATURE_NAMES = [
+    "classifier_mean",
+    "classifier_std",
+    "stylometry_mean",
+    "stylometry_std",
+    "surprisal_mean",
+    "surprisal_std",
+    "consistency",
+    "quality_penalty",
+    "uncertainty_penalty",
+    "token_count",
+    "segment_count",
+    "language_supported",
+    "mean_segment_tokens",
+    "max_segment_tokens",
+]
 
 
 def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
@@ -33,14 +50,14 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
 
     segment_features = [extract_segment_features(chunk.text) for chunk in chunks]
     consistency = compute_document_consistency(segment_features)
+    artifact_bundle = get_artifact_bundle()
+    artifact_signals_applied = apply_artifact_predictions(artifact_bundle, chunks=[chunk.text for chunk in chunks], segment_features=segment_features)
 
     segments: list[SegmentResult] = []
-    segment_scores: list[float] = []
     all_reasons: list[str] = []
 
     for chunk, feature_set in zip(chunks, segment_features, strict=False):
         score = score_segment(feature_set, consistency)
-        segment_scores.append(score)
         segment_confidence = segment_confidence_score(feature_set, extracted.extraction_quality, language.supported)
         all_reasons.extend(feature_set.reasons)
 
@@ -73,6 +90,7 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
     quality_penalty = quality_penalty_for(extracted.extraction_quality, language.supported, extracted.text)
     agreement = model_agreement(classifier_mean, stylometric_mean, surprisal_mean, consistency)
     uncertainty_penalty = clamp(1.0 - agreement)
+    token_count = len(tokenize_words(extracted.text))
 
     raw_score = clamp(
         0.40 * classifier_mean
@@ -82,8 +100,24 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
         - 0.06 * quality_penalty
         - 0.04 * uncertainty_penalty
     )
-    calibrated = calibrate_score(raw_score)
-    token_count = len(tokenize_words(extracted.text))
+    document_feature_map = build_document_meta_features(
+        segment_features=segment_features,
+        consistency=consistency,
+        quality_penalty=quality_penalty,
+        uncertainty_penalty=uncertainty_penalty,
+        token_count=token_count,
+        language_supported=language.supported,
+    )
+
+    artifact_probability = None
+    model_version = HEURISTIC_MODEL_VERSION
+    calibration_version = HEURISTIC_CALIBRATION_VERSION
+    if artifact_bundle is not None and artifact_signals_applied:
+        model_version = artifact_bundle.model_version
+        calibration_version = artifact_bundle.calibration_version
+        artifact_probability = artifact_bundle.predict_document_probability(document_feature_map)
+
+    calibrated = clamp(artifact_probability) if artifact_probability is not None else calibrate_score(raw_score)
     confidence_score = document_confidence_score(
         token_count=token_count,
         extraction_quality=extracted.extraction_quality,
@@ -142,9 +176,33 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
             model_agreement=round(agreement, 4),
         ),
         segments=segments,
-        model_version=MODEL_VERSION,
-        calibration_version=CALIBRATION_VERSION,
+        model_version=model_version,
+        calibration_version=calibration_version,
     )
+
+
+def apply_artifact_predictions(
+    artifact_bundle: ArtifactBundle | None,
+    chunks: list[str],
+    segment_features: list[SegmentFeatureSet],
+) -> bool:
+    if artifact_bundle is None or not segment_features:
+        return False
+
+    applied = False
+    classifier_probabilities = artifact_bundle.predict_classifier_probabilities(chunks)
+    if classifier_probabilities and len(classifier_probabilities) == len(segment_features):
+        for feature_set, probability in zip(segment_features, classifier_probabilities, strict=False):
+            feature_set.classifier_probability = clamp(probability)
+        applied = True
+
+    stylometry_probabilities = artifact_bundle.predict_stylometry_probabilities(segment_features)
+    if stylometry_probabilities and len(stylometry_probabilities) == len(segment_features):
+        for feature_set, probability in zip(segment_features, stylometry_probabilities, strict=False):
+            feature_set.stylometric_anomaly_score = clamp(probability)
+        applied = True
+
+    return applied
 
 
 def score_segment(feature_set: SegmentFeatureSet, consistency: float) -> float:
@@ -227,6 +285,38 @@ def quality_penalty_for(extraction_quality: str, language_supported: bool, text:
 def calibrate_score(raw_score: float) -> float:
     compressed = 0.50 + ((raw_score - 0.50) * 0.88)
     return clamp(compressed)
+
+
+def build_document_meta_features(
+    *,
+    segment_features: list[SegmentFeatureSet],
+    consistency: float,
+    quality_penalty: float,
+    uncertainty_penalty: float,
+    token_count: int,
+    language_supported: bool,
+) -> dict[str, float]:
+    classifier_values = [feature.classifier_probability for feature in segment_features]
+    stylometry_values = [feature.stylometric_anomaly_score for feature in segment_features]
+    surprisal_values = [feature.surprisal_signal for feature in segment_features]
+    segment_tokens = [float(feature.token_count) for feature in segment_features]
+
+    return {
+        "classifier_mean": mean(classifier_values),
+        "classifier_std": safe_std(classifier_values),
+        "stylometry_mean": mean(stylometry_values),
+        "stylometry_std": safe_std(stylometry_values),
+        "surprisal_mean": mean(surprisal_values),
+        "surprisal_std": safe_std(surprisal_values),
+        "consistency": consistency,
+        "quality_penalty": quality_penalty,
+        "uncertainty_penalty": uncertainty_penalty,
+        "token_count": float(token_count),
+        "segment_count": float(len(segment_features)),
+        "language_supported": 1.0 if language_supported else 0.0,
+        "mean_segment_tokens": mean(segment_tokens),
+        "max_segment_tokens": max(segment_tokens) if segment_tokens else 0.0,
+    }
 
 
 def excerpt_for(text: str, max_chars: int = 220) -> str:

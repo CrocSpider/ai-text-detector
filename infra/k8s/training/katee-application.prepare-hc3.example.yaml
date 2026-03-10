@@ -1,0 +1,60 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: ai-text-detector-prepare-hc3
+  namespace: katee-we-asia
+  labels:
+    team: we-asia
+    environment: prod
+  annotations:
+    katee.springernature.io/email: ibrahim.alhatti@springernature.com
+    katee.springernature.io/vault: we-asia
+spec:
+  components:
+    - name: ai-text-detector-prepare-hc3
+      type: snjob
+      properties:
+        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.3
+        imagePullPolicy: IfNotPresent
+        restartPolicy: Never
+        backoffLimit: 0
+        cleanupFinishedJobTTLSeconds: 604800
+        cleanupPreviousJobs: true
+        terminationGracePeriodSeconds: 30
+        holdApplicationUntilProxyStarts: false
+        command:
+          - python
+          - -m
+          - trainer.cli
+          - prepare-hc3
+          - --output-dir
+          - /mnt/data
+          - --subset
+          - all
+          - --max-per-class
+          - "12000"
+        resources:
+          cpu: "1"
+          memory: 8Gi
+        env:
+          - name: HF_HOME
+            value: /cache/huggingface
+          - name: TRANSFORMERS_CACHE
+            value: /cache/huggingface
+          - name: TOKENIZERS_PARALLELISM
+            value: "false"
+      traits:
+        - type: snstorage
+          properties:
+            pvc:
+              - name: ai-text-detector-data
+                mountPath: /mnt/data
+                accessModes:
+                  - ReadWriteOnce
+                storageClassName: csi-regional-standard
+                resources:
+                  requests:
+                    storage: 200Gi
+            emptyDir:
+              - name: cache
+                mountPath: /cache

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore[import-not-found]
 
 
 class Settings(BaseSettings):
@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     default_language: str = "en"
     min_tokens_for_medium_confidence: int = 120
     min_tokens_for_high_confidence: int = 300
+    enable_artifact_models: bool = False
+    ml_artifact_dir: str | None = None
+    artifact_device: str = "auto"
 
     model_config = SettingsConfigDict(env_prefix="API_", extra="ignore")
 

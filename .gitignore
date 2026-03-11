@@ -1,5 +1,7 @@
 node_modules/
 .next/
+artifacts*/
+artifact-copies/
 dist/
 .venv/
 __pycache__/

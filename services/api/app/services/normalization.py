@@ -22,6 +22,7 @@ from text_features.text import (  # noqa: F401
     split_paragraphs,
     split_sentences,
     tokenize_words,
+    trimmed_mean,
 )
 
 

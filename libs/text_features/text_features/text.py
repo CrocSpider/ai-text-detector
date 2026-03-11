@@ -116,6 +116,22 @@ def mean(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def trimmed_mean(values: list[float], trim_frac: float = 0.10) -> float:
+    """Mean after dropping the top *trim_frac* fraction of values.
+
+    For short lists (<= 3 items) the plain mean is returned to avoid
+    removing meaningful signal on short documents.
+    """
+    if not values:
+        return 0.0
+    n = len(values)
+    if n <= 3:
+        return mean(values)
+    n_drop = max(1, int(n * trim_frac))
+    trimmed = sorted(values)[: n - n_drop]  # drop the highest n_drop values
+    return mean(trimmed)
+
+
 def safe_std(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0

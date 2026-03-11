@@ -16,7 +16,7 @@ from text_features.features import (
     model_agreement,
     quality_penalty_for,
 )
-from text_features.text import clamp, mean, safe_std
+from text_features.text import clamp, mean, safe_std, trimmed_mean
 from app.services.recommendation import (
     agreement_summary,
     confidence_label,
@@ -75,9 +75,9 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
     classifier_values = [feature.classifier_probability for feature in segment_features]
     stylometric_values = [feature.stylometric_anomaly_score for feature in segment_features]
     surprisal_values = [feature.surprisal_signal for feature in segment_features]
-    classifier_mean = mean(classifier_values)
-    stylometric_mean = mean(stylometric_values)
-    surprisal_mean = mean(surprisal_values)
+    classifier_mean = trimmed_mean(classifier_values)
+    stylometric_mean = trimmed_mean(stylometric_values)
+    surprisal_mean = trimmed_mean(surprisal_values)
     quality_penalty = quality_penalty_for(extracted.extraction_quality, language.supported, extracted.text)
     agreement = model_agreement(classifier_mean, stylometric_mean, surprisal_mean, consistency)
     uncertainty_penalty = clamp(1.0 - agreement)
@@ -103,12 +103,29 @@ def analyze_document(extracted: ExtractedDocument) -> AnalysisResult:
     artifact_probability = None
     model_version = HEURISTIC_MODEL_VERSION
     calibration_version = HEURISTIC_CALIBRATION_VERSION
+    calibrated_raw = calibrate_score(raw_score)
     if artifact_bundle is not None and artifact_signals_applied:
         model_version = artifact_bundle.model_version
         calibration_version = artifact_bundle.calibration_version
         artifact_probability = artifact_bundle.predict_document_probability(document_feature_map)
 
-    calibrated = clamp(artifact_probability) if artifact_probability is not None else calibrate_score(raw_score)
+    if artifact_probability is not None:
+        # Blend meta-model output with the heuristic calibrated score.
+        # Base blend weight is model_agreement (0 = no agreement → trust heuristic).
+        #
+        # Additional adjustment: when the transformer classifier is very confident
+        # the text is NOT AI (classifier_mean near 0), further reduce the meta-model
+        # weight proportionally.  This prevents the meta-model — which can
+        # extrapolate poorly for out-of-distribution documents (e.g. long scientific
+        # papers) — from overriding the most powerful direct signal.
+        _CLASSIFIER_CERTAINTY_THRESHOLD = 0.10
+        if classifier_mean < _CLASSIFIER_CERTAINTY_THRESHOLD:
+            blend_weight = agreement * (classifier_mean / _CLASSIFIER_CERTAINTY_THRESHOLD)
+        else:
+            blend_weight = clamp(agreement)
+        calibrated = clamp(blend_weight * artifact_probability + (1.0 - blend_weight) * calibrated_raw)
+    else:
+        calibrated = calibrated_raw
     confidence_score = document_confidence_score(
         token_count=token_count,
         extraction_quality=extracted.extraction_quality,
@@ -265,11 +282,11 @@ def build_document_meta_features(
     segment_tokens = [float(feature.token_count) for feature in segment_features]
 
     return {
-        "classifier_mean": mean(classifier_values),
+        "classifier_mean": trimmed_mean(classifier_values),
         "classifier_std": safe_std(classifier_values),
-        "stylometry_mean": mean(stylometry_values),
+        "stylometry_mean": trimmed_mean(stylometry_values),
         "stylometry_std": safe_std(stylometry_values),
-        "surprisal_mean": mean(surprisal_values),
+        "surprisal_mean": trimmed_mean(surprisal_values),
         "surprisal_std": safe_std(surprisal_values),
         "consistency": consistency,
         "quality_penalty": quality_penalty,

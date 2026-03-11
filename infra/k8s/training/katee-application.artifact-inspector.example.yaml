@@ -1,0 +1,50 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: ai-text-detector-artifact-inspector
+  namespace: YOUR-NAMESPACE
+  labels:
+    team: YOUR-TEAM
+    environment: prod
+  annotations:
+    katee.springernature.io/email: ibrahim.alhatti@springernature.com
+    katee.springernature.io/vault: we-asia
+spec:
+  components:
+    - name: ai-text-detector-artifact-inspector
+      type: snjob
+      properties:
+        image: ubuntu:22.04
+        imagePullPolicy: IfNotPresent
+        restartPolicy: Never
+        backoffLimit: 0
+        cleanupFinishedJobTTLSeconds: 604800
+        cleanupPreviousJobs: true
+        terminationGracePeriodSeconds: 30
+        holdApplicationUntilProxyStarts: false
+        command:
+          - bash
+          - -lc
+          - |
+            set -euo pipefail
+            echo 'artifact inspector started'
+            if [ -d /mnt/artifacts ]; then
+              echo 'mounted path exists: true'
+              echo 'top-level entries:'
+              ls -lah /mnt/artifacts
+            else
+              echo 'mounted path exists: false'
+            fi
+            sleep 7d
+        resources:
+          cpu: "1"
+          memory: 2Gi
+      traits:
+        - type: snstorage
+          properties:
+            pvc:
+              - name: ai-text-detector-artifacts
+                mountOnly: true
+                mountPath: /mnt/artifacts
+                accessModes:
+                  - ReadWriteOnce

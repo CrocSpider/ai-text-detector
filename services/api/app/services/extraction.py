@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import re
+from collections import Counter as _Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -195,13 +196,107 @@ def _extract_docx(payload: bytes) -> str:
         raise HTTPException(status_code=400, detail=f"DOCX extraction failed: {exc}") from exc
 
 
+# ---------------------------------------------------------------------------
+# PDF-specific cleaning helpers
+# ---------------------------------------------------------------------------
+
+_REFERENCES_HEADING_RE = re.compile(
+    r"\n(?:References|Bibliography|Literature\s+Cited|Works\s+Cited|Citations|Sources)\s*\n",
+    re.IGNORECASE,
+)
+
+_PAGE_BOILERPLATE_RE = re.compile(
+    r"(?im)^[ \t]*("
+    r"doi\s*[:\s]\s*10\.\d{4,}"       # DOI lines
+    r"|https?://doi\.org/\S+"           # DOI URLs
+    r"|issn\s*[\d\-]+"                 # ISSN
+    r"|©\s*20\d\d\b.*"                # © copyright
+    r"|copyright\s+\d{4}\b.*"          # Copyright 20xx
+    r"|\d+\s*$"                         # bare page numbers
+    r")[ \t]*$",
+)
+
+
+_SPREAD_CHARS_RE = re.compile(r"(?:[A-Za-z] ){4,}[A-Za-z]")
+
+
+def _clean_pdf_page(page_text: str) -> str:
+    """Strip common per-page boilerplate from a single extracted PDF page."""
+    cleaned = _PAGE_BOILERPLATE_RE.sub("", page_text)
+    lines_out: list[str] = []
+    for line in cleaned.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            lines_out.append(line)
+            continue
+        # Drop short all-uppercase lines (running headers: "NATURE COMMUNICATIONS", "ARTICLE")
+        if stripped.isupper() and len(stripped.split()) <= 8:
+            continue
+        # Drop lines where most characters are isolated single letters separated
+        # by spaces — a two-column boundary artifact that pypdf sometimes produces
+        # (e.g. "I z u m i S h i m a d a" on the column seam).
+        non_space = stripped.replace(" ", "")
+        if non_space and len(stripped) > 10:
+            space_ratio = stripped.count(" ") / len(stripped)
+            has_spread = bool(_SPREAD_CHARS_RE.search(stripped))
+            if space_ratio > 0.55 and has_spread:
+                continue
+        lines_out.append(line)
+    return "\n".join(lines_out)
+
+
+def _strip_pdf_boilerplate(text: str, *, source_page_texts: list[str]) -> str:
+    """Remove structural noise from joined multi-page PDF text.
+
+    1. Truncates at the References / Bibliography section heading if found in
+       the final 50 % of the document.
+    2. Removes lines that appear verbatim in >= 3 page blocks (running
+       headers / footers).
+    """
+    # Step 1 – truncate at references section
+    half = len(text) // 2
+    last_match = None
+    for m in _REFERENCES_HEADING_RE.finditer(text):
+        if m.start() >= half:
+            last_match = m
+    if last_match:
+        text = text[: last_match.start()].rstrip()
+
+    # Step 2 – remove lines repeated across >= 3 pages (running headers/footers)
+    if len(source_page_texts) >= 3:
+        line_page_count: _Counter[str] = _Counter()
+        for page in source_page_texts:
+            seen_in_page: set[str] = set()
+            for line in page.splitlines():
+                s = line.strip()
+                if s and len(s) <= 120 and s not in seen_in_page:
+                    line_page_count[s] += 1
+                    seen_in_page.add(s)
+        repeated = {line for line, count in line_page_count.items() if count >= 3}
+        if repeated:
+            text = "\n".join(
+                line for line in text.splitlines() if line.strip() not in repeated
+            )
+
+    return text
+
+
 def _extract_pdf(payload: bytes) -> str:
     try:
+        import warnings as _warnings
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(payload))
-        pages = [(page.extract_text() or "").strip() for page in reader.pages]
-        return "\n\n".join(page for page in pages if page)
+        raw_pages: list[str] = []
+        for page in reader.pages:
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("ignore")
+                page_text = (page.extract_text() or "").strip()
+            cleaned = _clean_pdf_page(page_text)
+            if cleaned.strip():
+                raw_pages.append(cleaned)
+        joined = "\n\n".join(raw_pages)
+        return _strip_pdf_boilerplate(joined, source_page_texts=raw_pages)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"PDF extraction failed: {exc}") from exc
 

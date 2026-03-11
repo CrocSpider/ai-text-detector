@@ -69,7 +69,8 @@ class ArtifactBundle:
             return None
 
         matrix = [stylometric_feature_vector(feature_set, feature_names) for feature_set in feature_sets]
-        return self._predict_binary_probabilities(model, matrix)
+        input_data = self._to_named_dataframe(matrix, feature_names)
+        return self._predict_binary_probabilities(model, input_data)
 
     def predict_document_probability(self, feature_map: dict[str, float]) -> float | None:
         spec = self.manifest.get("meta")
@@ -81,8 +82,24 @@ class ArtifactBundle:
         if model is None or feature_names is None:
             return None
 
-        row = [[feature_map.get(name, 0.0) for name in feature_names]]
-        raw_prediction = self._predict_binary_probabilities(model, row)
+        # Clamp features that are likely out-of-distribution for the meta-model.
+        # The meta-model was trained on typical documents (200–2000 tokens); very
+        # long scientific papers produce extreme token_count / segment_token values
+        # that cause the model to extrapolate incorrectly.
+        _OOD_CLAMPS: dict[str, tuple[float, float]] = {
+            "token_count": (0.0, 5000.0),
+            "mean_segment_tokens": (0.0, 600.0),
+            "max_segment_tokens": (0.0, 800.0),
+            "segment_count": (0.0, 20.0),
+        }
+        clamped_map = dict(feature_map)
+        for key, (lo, hi) in _OOD_CLAMPS.items():
+            if key in clamped_map:
+                clamped_map[key] = max(lo, min(hi, clamped_map[key]))
+
+        row = [[clamped_map.get(name, 0.0) for name in feature_names]]
+        input_data = self._to_named_dataframe(row, feature_names)
+        raw_prediction = self._predict_binary_probabilities(model, input_data)
         if raw_prediction is None:
             return None
 
@@ -214,7 +231,19 @@ class ArtifactBundle:
             logger.warning("CUDA was requested for artifact inference but is not available; falling back to CPU.")
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def _predict_binary_probabilities(self, model: Any, matrix: list[list[float]]) -> list[float] | None:
+    def _to_named_dataframe(self, matrix: list[list[float]], feature_names: list[str]) -> Any:
+        """Wrap the matrix in a pandas DataFrame with named columns.
+
+        Eliminates sklearn/LightGBM warnings about missing feature names.
+        Falls back to the raw matrix if pandas is not installed.
+        """
+        try:
+            pd = import_module("pandas")
+            return pd.DataFrame(matrix, columns=feature_names)
+        except Exception:
+            return matrix
+
+    def _predict_binary_probabilities(self, model: Any, matrix: Any) -> list[float] | None:
         try:
             if hasattr(model, "predict_proba"):
                 probabilities = model.predict_proba(matrix)

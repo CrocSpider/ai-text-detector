@@ -1,0 +1,100 @@
+# AI Text Detector — Katee Application
+#
+# Deploys two components:
+#   ai-text-detector-api   — FastAPI inference service (snstateless, PVC-mounted artifacts)
+#   ai-text-detector-web   — Next.js frontend          (snstateless)
+#
+# Prerequisites:
+#   - The artifact PVC "ai-text-detector-artifacts" must already exist in the namespace.
+#   - Images must be built and pushed to the GCR registry before applying.
+#
+# Build and push images:
+#   docker build -t eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:latest \
+#     -f services/api/Dockerfile .
+#   docker build -t eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:latest \
+#     --build-arg API_INTERNAL_BASE_URL=http://ai-text-detector-api:8000 \
+#     apps/web/
+#   docker push eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:latest
+#   docker push eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:latest
+#
+# Apply:
+#   kubectl apply -f infra/k8s/app/katee-application.yaml
+#
+# Verify:
+#   kubectl get application ai-text-detector -n katee-we-asia
+#   kubectl get pods -n katee-we-asia -l app=ai-text-detector-api
+#   kubectl get pods -n katee-we-asia -l app=ai-text-detector-web
+
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: ai-text-detector
+  namespace: katee-we-asia
+  labels:
+    app.kubernetes.io/name: ai-text-detector
+    app.kubernetes.io/part-of: ai-text-detector
+    team: we-asia
+
+spec:
+  components:
+
+    # -----------------------------------------------------------------------
+    # API service — FastAPI + ML inference
+    # CPU-only inference; requires ~4–6 GB RAM for torch + model weights.
+    # replicas: 1 because the artifact PVC is ReadWriteOnce (single node).
+    # -----------------------------------------------------------------------
+    - name: ai-text-detector-api
+      type: snstateless
+      properties:
+        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:latest
+        replicas: 1
+        port: 8000
+        resources:
+          cpu: "2"
+          memory: 6Gi
+        env:
+          - name: API_ENV
+            value: production
+          - name: API_ENABLE_ARTIFACT_MODELS
+            value: "true"
+          - name: API_ML_ARTIFACT_DIR
+            # Path must match the mountPath in the snstorage trait below.
+            value: /mnt/artifacts/modernbert-en-v1-rerun-20260310
+          - name: API_ARTIFACT_DEVICE
+            value: cpu
+          - name: API_FRONTEND_ORIGIN
+            # Replace with the actual external hostname served by the web ingress.
+            value: https://ai-text-detector.example.com
+          - name: API_MAX_UPLOAD_SIZE_MB
+            value: "20"
+      traits:
+        - type: snstorage
+          properties:
+            pvc:
+              - name: ai-text-detector-artifacts
+                # Must match API_ML_ARTIFACT_DIR parent path.
+                mountPath: /mnt/artifacts
+                # mountOnly reuses the existing PVC without re-creating it.
+                mountOnly: true
+
+    # -----------------------------------------------------------------------
+    # Web frontend — Next.js (standalone output)
+    # Proxies browser requests to the API via /api-proxy/* rewrites so no
+    # external API URL needs to be baked into the image at build time.
+    # -----------------------------------------------------------------------
+    - name: ai-text-detector-web
+      type: snstateless
+      properties:
+        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:latest
+        replicas: 1
+        port: 3000
+        resources:
+          cpu: "0.5"
+          memory: 512Mi
+        env:
+          - name: NODE_ENV
+            value: production
+          - name: API_INTERNAL_BASE_URL
+            # Internal k8s service DNS name for the API component.
+            # Katee creates a ClusterIP Service with the component name.
+            value: http://ai-text-detector-api:8000

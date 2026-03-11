@@ -7,6 +7,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       API_FRONTEND_ORIGIN: http://localhost:3000
+      API_ENV: development
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -14,8 +15,11 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        API_INTERNAL_BASE_URL: http://api:8000
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      # Used by Next.js rewrites() at runtime to forward /api-proxy/* requests.
+      # The browser never needs to know the API host directly.
       API_INTERNAL_BASE_URL: http://api:8000
     ports:
       - "3000:3000"

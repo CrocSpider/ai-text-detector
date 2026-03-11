@@ -2,9 +2,12 @@ import type { AnalysisResult, BatchAnalysisResponse, EvaluationSummary } from "@
 
 function getApiBaseUrl() {
   if (typeof window === "undefined") {
+    // Server-side (SSR / API routes): prefer the internal k8s service URL.
     return process.env.API_INTERNAL_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
   }
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+  // Browser-side: prefer an explicit override, otherwise use the rewrite proxy
+  // so no URL needs to be baked into the Docker image at build time.
+  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api-proxy";
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

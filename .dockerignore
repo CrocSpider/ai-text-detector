@@ -9,6 +9,7 @@ __pycache__/
 node_modules/
 coverage/
 artifacts/
+artifact-copies/
 cache/
 uploads/
 *.pyc

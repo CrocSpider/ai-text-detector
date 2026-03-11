@@ -40,10 +40,16 @@ class ArtifactBundle:
         if tokenizer is None or model is None or torch is None:
             return None
 
+        # Normalize whitespace before tokenising so that paragraph formatting
+        # (e.g. \n\n vs \n vs a trailing newline) does not change the token
+        # sequence and therefore cannot influence the classification result.
+        # Content is what matters, not indentation or line-break style.
+        normalised = [" ".join(t.split()) for t in texts]
+
         positive_label = int(spec.get("positive_label", 1))
         max_length = int(spec.get("max_length", 512))
         encoded = tokenizer(
-            texts,
+            normalised,
             padding=True,
             truncation=True,
             max_length=max_length,

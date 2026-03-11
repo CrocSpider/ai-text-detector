@@ -160,7 +160,11 @@ def _records_to_examples(segments: list[SegmentRecord]) -> list[dict[str, int | 
 
 
 def _tokenize_batch(batch: dict[str, list[str]], tokenizer: Any, max_length: int) -> dict[str, Any]:
-    return tokenizer(batch["text"], truncation=True, max_length=max_length)
+    # Normalise whitespace before tokenising so that paragraph-break style
+    # (\n\n vs \n vs trailing newlines) cannot be learned as a feature.
+    # This must match the normalisation in model_bundle.predict_classifier_probabilities.
+    normalised = [" ".join(t.split()) for t in batch["text"]]
+    return tokenizer(normalised, truncation=True, max_length=max_length)
 
 
 def generate_oof_probabilities(

@@ -73,7 +73,7 @@ spec:
     - name: ai-text-detector-train
       type: snjob
       properties:
-        image: REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4
+        image: <your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4
         command:
           - python
           - -m

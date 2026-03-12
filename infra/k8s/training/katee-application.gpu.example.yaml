@@ -2,19 +2,19 @@ apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
   name: ai-text-detector-train
-  namespace: YOUR-NAMESPACE
+  namespace: <your-namespace>
   labels:
-    team: YOUR-TEAM
+    team: <your-team>
     environment: prod
   annotations:
-    katee.springernature.io/email: ibrahim.alhatti@springernature.com
-    katee.springernature.io/vault: we-asia
+    katee.springernature.io/email: <owner-email>
+    katee.springernature.io/vault: <your-team>
 spec:
   components:
     - name: ai-text-detector-train
       type: snjob
       properties:
-        image: REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4
+        image: <your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4
         imagePullPolicy: IfNotPresent
         restartPolicy: Never
         backoffLimit: 0

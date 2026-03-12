@@ -21,7 +21,7 @@ kubectl apply -f infra/k8s/training/all-in-one.gpu.example.yaml
 The example job in that file already points to:
 
 ```text
-REGISTRY/PROJECT/TEAM/ai-text-detector-trainer:1.4
+<your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4
 ```
 
 ## Katee apply

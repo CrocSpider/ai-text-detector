@@ -41,16 +41,21 @@ spec:
     # -----------------------------------------------------------------------
     # API service — FastAPI + ML inference
     # CPU-only inference; requires ~4–6 GB RAM for torch + model weights.
-    # replicas: 1 because the artifact PVC is ReadWriteOnce (single node).
+    # snstateful because the artifact PVC is ReadWriteOnce (single-node).
     # -----------------------------------------------------------------------
     - name: ai-text-detector-api
-      type: snstateless
+      type: snstateful
       properties:
-        image: REGISTRY/PROJECT/TEAM/ai-text-detector-api:latest
-        replicas: 1
-        port: 8000
+        image: REGISTRY/PROJECT/TEAM/ai-text-detector-api:1.0
+        ports:
+          - containerPort: 8000
+            name: api
+            protocol: http
+            servicePort: 8000
+        computeClassEnabled: true
+        computeClass: cost-optimized
         resources:
-          cpu: "2"
+          cpu: 2
           memory: 6Gi
         env:
           - name: API_ENV
@@ -58,13 +63,13 @@ spec:
           - name: API_ENABLE_ARTIFACT_MODELS
             value: "true"
           - name: API_ML_ARTIFACT_DIR
-            # Path must match the mountPath in the snstorage trait below.
+            # Path must match the mountPath in the snpvc trait below.
             value: /mnt/artifacts/modernbert-en-v1-rerun-20260310
           - name: API_ARTIFACT_DEVICE
             value: cpu
           - name: API_FRONTEND_ORIGIN
             # Replace with the actual external hostname served by the web ingress.
-            value: https://ai-text-detector.example.com
+            value: https://YOUR-APP.apps.YOUR-CLUSTER.springernature.io
           - name: API_MAX_UPLOAD_SIZE_MB
             value: "20"
       traits:
@@ -72,9 +77,7 @@ spec:
           properties:
             pvc:
               - name: ai-text-detector-artifacts
-                # Must match API_ML_ARTIFACT_DIR parent path.
                 mountPath: /mnt/artifacts
-                # mountOnly reuses the existing PVC without re-creating it.
                 mountOnly: true
 
     # -----------------------------------------------------------------------
@@ -85,11 +88,16 @@ spec:
     - name: ai-text-detector-web
       type: snstateless
       properties:
-        image: REGISTRY/PROJECT/TEAM/ai-text-detector-web:latest
-        replicas: 1
-        port: 3000
+        image: REGISTRY/PROJECT/TEAM/ai-text-detector-web:1.0
+        ports:
+          - containerPort: 3000
+            name: web
+            protocol: http
+            servicePort: 3000
+        computeClassEnabled: true
+        computeClass: cost-optimized
         resources:
-          cpu: "0.5"
+          cpu: 1
           memory: 512Mi
         env:
           - name: NODE_ENV
@@ -98,3 +106,9 @@ spec:
             # Internal k8s service DNS name for the API component.
             # Katee creates a ClusterIP Service with the component name.
             value: http://ai-text-detector-api:8000
+      traits:
+        - type: sningress
+          properties:
+            privateRoutes:
+              - route: YOUR-APP.apps.YOUR-CLUSTER.springernature.io
+                servicePort: 3000

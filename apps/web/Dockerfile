@@ -10,6 +10,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Ensure the public directory exists (Next.js standalone COPY requires it)
+RUN mkdir -p public
+
 # API_INTERNAL_BASE_URL is read at Next.js startup (by rewrites()) not baked
 # into the client bundle, so it's safe to set here as a build default.
 ARG API_INTERNAL_BASE_URL=http://ai-text-detector-api:8000

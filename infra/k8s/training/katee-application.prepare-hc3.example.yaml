@@ -2,19 +2,19 @@ apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
   name: ai-text-detector-prepare-hc3
-  namespace: katee-we-asia
+  namespace: <your-namespace>
   labels:
-    team: we-asia
+    team: <your-team>
     environment: prod
   annotations:
-    katee.springernature.io/email: ibrahim.alhatti@springernature.com
-    katee.springernature.io/vault: we-asia
+    katee.springernature.io/email: <owner-email>
+    katee.springernature.io/vault: <your-team>
 spec:
   components:
     - name: ai-text-detector-prepare-hc3
       type: snjob
       properties:
-        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4
+        image: <your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4
         imagePullPolicy: IfNotPresent
         restartPolicy: Never
         backoffLimit: 0

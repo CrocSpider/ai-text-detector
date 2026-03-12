@@ -92,7 +92,7 @@ cd services/ml
 ## Build the training image
 
 ```bash
-docker build -f services/ml/Dockerfile -t eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4 .
+docker build -f services/ml/Dockerfile -t <your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4 .
 ```
 
 ## Prepare public seed data

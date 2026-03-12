@@ -10,7 +10,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: trainer
-          image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4
+          image: <your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4
           imagePullPolicy: IfNotPresent
           command:
             - python

@@ -61,7 +61,7 @@ properties:
 
 ## Current expected image
 
-- `eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-trainer:1.4`
+- `<your-registry>/<your-project>/<your-team>/ai-text-detector-trainer:1.4`
 
 This tag includes the `transformers` compatibility fix for the `TrainingArguments` API mismatch.
 

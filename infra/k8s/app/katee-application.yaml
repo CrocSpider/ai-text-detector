@@ -9,31 +9,31 @@
 #   - Images must be built and pushed to the GCR registry before applying.
 #
 # Build and push images:
-#   docker build -t eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:latest \
+#   docker build -t <your-registry>/<your-project>/<your-team>/ai-text-detector-api:latest \
 #     -f services/api/Dockerfile .
-#   docker build -t eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:latest \
+#   docker build -t <your-registry>/<your-project>/<your-team>/ai-text-detector-web:latest \
 #     --build-arg API_INTERNAL_BASE_URL=http://ai-text-detector-api:8000 \
 #     apps/web/
-#   docker push eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:latest
-#   docker push eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:latest
+#   docker push <your-registry>/<your-project>/<your-team>/ai-text-detector-api:latest
+#   docker push <your-registry>/<your-project>/<your-team>/ai-text-detector-web:latest
 #
 # Apply:
 #   kubectl apply -f infra/k8s/app/katee-application.yaml
 #
 # Verify:
-#   kubectl get application ai-text-detector -n katee-we-asia
-#   kubectl get pods -n katee-we-asia -l app=ai-text-detector-api
-#   kubectl get pods -n katee-we-asia -l app=ai-text-detector-web
+#   kubectl get application ai-text-detector -n <your-namespace>
+#   kubectl get pods -n <your-namespace> -l app=ai-text-detector-api
+#   kubectl get pods -n <your-namespace> -l app=ai-text-detector-web
 
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
   name: ai-text-detector
-  namespace: katee-we-asia
+  namespace: <your-namespace>
   labels:
     app.kubernetes.io/name: ai-text-detector
     app.kubernetes.io/part-of: ai-text-detector
-    team: we-asia
+    team: <your-team>
 
 spec:
   components:
@@ -46,7 +46,7 @@ spec:
     - name: ai-text-detector-api
       type: snstateful
       properties:
-        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-api:1.0
+        image: <your-registry>/<your-project>/<your-team>/ai-text-detector-api:1.0
         ports:
           - containerPort: 8000
             name: api
@@ -69,7 +69,7 @@ spec:
             value: cpu
           - name: API_FRONTEND_ORIGIN
             # Replace with the actual external hostname served by the web ingress.
-            value: https://ai-sniffer.apps.private.k8s.springernature.io
+            value: https://<your-app-hostname>.apps.<your-cluster>.springernature.io
           - name: API_MAX_UPLOAD_SIZE_MB
             value: "20"
       traits:
@@ -88,7 +88,7 @@ spec:
     - name: ai-text-detector-web
       type: snstateless
       properties:
-        image: eu.gcr.io/halfpipe-io/we-asia/ai-text-detector-web:1.0
+        image: <your-registry>/<your-project>/<your-team>/ai-text-detector-web:1.0
         ports:
           - containerPort: 3000
             name: web
@@ -110,5 +110,5 @@ spec:
         - type: sningress
           properties:
             privateRoutes:
-              - route: ai-sniffer.apps.private.k8s.springernature.io
+              - route: <your-app-hostname>.apps.<your-cluster>.springernature.io
                 servicePort: 3000
